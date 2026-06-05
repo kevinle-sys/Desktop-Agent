@@ -2,8 +2,8 @@
 
 A hierarchical **Orchestrator + Sub-Agent** framework tailored to a PennyMac
 Secondary Market Trader's daily workflows: querying loan/pricing data from
-Snowflake, driving complex Excel pricing models, and triggering/generating VBA
-automation.
+Snowflake (and legacy SQL Server during the migration), driving complex Excel
+pricing models, and triggering/generating VBA automation.
 
 A single natural-language request (typed into the CLI) is interpreted by an
 **Orchestrator Agent** that uses an LLM's native **tool-calling** to route the
@@ -15,6 +15,8 @@ work to the right specialist sub-agent and then synthesizes the result.
         │
         ▼
   Orchestrator ──tool_call──▶ Snowflake/SQL Agent ──▶ DataFrame
+        │
+        ├──tool_call──▶ SQL Server Agent (legacy) ──▶ DataFrame
         │
         ├──tool_call──▶ Excel Modeling Agent ──▶ writes inputs, reads outputs
         │
