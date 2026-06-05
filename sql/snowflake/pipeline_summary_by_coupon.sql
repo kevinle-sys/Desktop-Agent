@@ -1,5 +1,5 @@
 -- Aggregate open pipeline UPB and weighted-average note rate by coupon.
--- Bind params: as_of_date (date), row_limit (int)
+-- Bind params (%(name)s style): as_of_date (date), row_limit (int)
 SELECT product,
        coupon,
        COUNT(*)                                   AS loan_count,

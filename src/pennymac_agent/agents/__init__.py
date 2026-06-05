@@ -3,6 +3,7 @@
 from .base_agent import AgentResult, BaseAgent
 from .excel_agent import ExcelModelingAgent
 from .snowflake_agent import SnowflakeAgent
+from .sqlserver_agent import SQLServerAgent
 from .vba_agent import VBAProcessAgent
 
 __all__ = [
@@ -10,5 +11,6 @@ __all__ = [
     "BaseAgent",
     "ExcelModelingAgent",
     "SnowflakeAgent",
+    "SQLServerAgent",
     "VBAProcessAgent",
 ]

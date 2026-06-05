@@ -1,5 +1,5 @@
 -- Locked loans for a given agency product, most recent lock first.
--- Bind params: product (str), start_date (date), row_limit (int)
+-- Bind params (%(name)s style): product (str), start_date (date), row_limit (int)
 SELECT loan_id,
        note_rate,
        upb,

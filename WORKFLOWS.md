@@ -7,22 +7,23 @@ most common changes a trader will make.
 
 ## A. Add a new SQL query
 
-The Snowflake agent loads named, parameterized queries from the `sql/`
-directory. Adding a query is a drop-in operation — no Python changes required.
+Both data agents load named, parameterized queries from disk — a drop-in
+operation with no Python changes. Templates are organized **by engine** because
+the dialects use different bind-parameter syntax:
 
-1. **Create the file** under `sql/`, named after the query, e.g.
-   `sql/locked_loans_by_product.sql`.
-2. **Use named bind parameters** with `%(name)s` style so values are passed
-   safely (never string-formatted):
+| Engine | Folder | Agent / tool | Param style | Row cap |
+|--------|--------|--------------|-------------|---------|
+| Snowflake | `sql/snowflake/` | `snowflake_query` | `%(name)s` | `LIMIT %(row_limit)s` |
+| SQL Server | `sql/sqlserver/` | `sqlserver_query` | `:name` | `TOP (:row_limit)` |
+
+### Snowflake example
+1. **Create the file** under `sql/snowflake/`, e.g.
+   `sql/snowflake/locked_loans_by_product.sql`.
+2. **Use `%(name)s` bind parameters** so values pass safely:
 
 ```sql
--- sql/locked_loans_by_product.sql
--- Locked loans for a given agency product, most recent lock first.
-SELECT loan_id,
-       note_rate,
-       upb,
-       lock_date,
-       product
+-- sql/snowflake/locked_loans_by_product.sql
+SELECT loan_id, note_rate, upb, lock_date, product
 FROM   secondary.locks
 WHERE  product = %(product)s
   AND  lock_date >= %(start_date)s
@@ -30,16 +31,38 @@ ORDER  BY lock_date DESC
 LIMIT  %(row_limit)s;
 ```
 
-3. **Invoke it** by asking the agent naturally, e.g.
-   *"Run locked_loans_by_product for FN30 since 2026-01-01, top 50."*
-   The LLM maps this to a `snowflake_query` tool call with
-   `query_name="locked_loans_by_product"` and the parameter dict.
+3. **Invoke it**: *"Run locked_loans_by_product for FN30 since 2026-01-01,
+   top 50."* → `snowflake_query` with `query_name="locked_loans_by_product"`
+   and the parameter dict.
 
-4. (Optional) **Inline SQL** is also supported for ad-hoc analysis via the
-   `sql` argument, subject to the read-only guardrail.
+### SQL Server example
+1. **Create the file** under `sql/sqlserver/`, e.g.
+   `sql/sqlserver/locked_loans_by_product.sql`.
+2. **Use `:name` bind parameters and T-SQL `TOP`** (no `LIMIT`):
 
-> Guardrail: the agent rejects `DROP`/`DELETE`/`TRUNCATE`/`UPDATE`/`INSERT` by
-> default. See `agents/snowflake_agent.py` (`_assert_read_only`).
+```sql
+-- sql/sqlserver/locked_loans_by_product.sql
+SELECT TOP (:row_limit)
+       loan_id, note_rate, upb, lock_date, product
+FROM   dbo.locks
+WHERE  product = :product
+  AND  lock_date >= :start_date
+ORDER  BY lock_date DESC;
+```
+
+3. **Invoke it**: *"Pull locked loans for FN30 from SQL Server."* →
+   `sqlserver_query` with `query_name="locked_loans_by_product"` and params.
+
+> Routing tip: the Orchestrator prefers Snowflake when the data is available
+> there and uses SQL Server for sources not yet migrated (or when you ask for
+> SQL Server explicitly).
+
+4. (Optional) **Inline SQL** is supported on both agents via the `sql`
+   argument, subject to the read-only guardrail.
+
+> Guardrail: both agents reject `DROP`/`DELETE`/`TRUNCATE`/`UPDATE`/`INSERT`
+> (the SQL Server agent also blocks `EXEC`) by default. See the `_assert_read_only`
+> method in `agents/snowflake_agent.py` and `agents/sqlserver_agent.py`.
 
 ---
 
@@ -121,7 +144,8 @@ The VBA agent can both **trigger existing macros** and **generate new ones**.
 
 | I want to... | Edit | Then ask... |
 |--------------|------|-------------|
-| Add a SQL query | new file in `sql/` | "Run `<name>` with ..." |
+| Add a Snowflake query | new file in `sql/snowflake/` | "Run `<name>` with ..." |
+| Add a SQL Server query | new file in `sql/sqlserver/` | "Run `<name>` from SQL Server ..." |
 | Point a model at a new file | `models/registry.yaml` `path:` | (no change) |
 | Map new model cells | `models/registry.yaml` `inputs/outputs` | "Push ... read back ..." |
 | Run an existing macro | `macros:` list in registry | "Run the `<Macro>` macro" |

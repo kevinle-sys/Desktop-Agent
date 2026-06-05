@@ -21,12 +21,15 @@ flowchart TD
     LLM -->|"structured tool_call(s)"| Orch
     Orch -->|dispatch| Registry[Agent Registry]
     Registry --> SF[Snowflake/SQL Agent]
+    Registry --> MS[SQL Server Agent]
     Registry --> XL[Excel Modeling Agent]
     Registry --> VBA[VBA/Process Agent]
     SF --> SFDB[(Snowflake)]
+    MS --> MSDB[(SQL Server)]
     XL --> WB["Excel workbooks"]
     VBA --> MAC["VBA macros / .bas files"]
     SF -->|"tool_result (DataFrame summary)"| Orch
+    MS -->|"tool_result (DataFrame summary)"| Orch
     XL -->|"tool_result (cell values)"| Orch
     VBA -->|"tool_result (status)"| Orch
     Orch -->|"final synthesis"| User
@@ -63,13 +66,14 @@ The loop continues while the model keeps emitting tool calls, bounded by
 | Module | Responsibility |
 |--------|----------------|
 | `src/pennymac_agent/main.py` | CLI (typer): `run` one-shot and interactive REPL. Builds the orchestrator and prints results. |
-| `config/settings.py` | `Settings` (pydantic-settings) loads `.env`: LLM provider/keys, Snowflake creds, Excel/VBA paths, logging. Single source of truth. |
+| `config/settings.py` | `Settings` (pydantic-settings) loads `.env`: LLM provider/keys, Snowflake creds, SQL Server creds, Excel/VBA paths, logging. Single source of truth. |
 | `llm/base.py` | `LLMProvider` ABC + shared types (`ChatMessage`, `ToolSpec`, `ToolCall`, `LLMResponse`). Defines the provider-agnostic contract. |
 | `llm/openai_provider.py` | Implements `LLMProvider` against the OpenAI SDK (`tools=` / `tool_calls`). |
 | `llm/anthropic_provider.py` | Implements `LLMProvider` against the Anthropic SDK (`tools=` / `tool_use` blocks). |
 | `llm/factory.py` | `build_provider(settings)` returns the configured provider. |
 | `agents/base_agent.py` | `BaseAgent` ABC: `name`, `description`, `parameters` (JSON schema), `run()`, and `to_tool_spec()`. `AgentResult` dataclass. |
-| `agents/snowflake_agent.py` | `SnowflakeAgent`: connect, run parameterized SQL, return `DataFrame`; read-only guardrail. |
+| `agents/snowflake_agent.py` | `SnowflakeAgent`: connect, run parameterized SQL (`%(name)s` binds), return `DataFrame`; read-only guardrail. |
+| `agents/sqlserver_agent.py` | `SQLServerAgent`: legacy SQL Server via SQLAlchemy+pyodbc, parameterized T-SQL (`:name` binds), SQL login or Windows auth, return `DataFrame`; read-only guardrail. |
 | `agents/excel_agent.py` | `ExcelModelingAgent`: open registered workbook, write inputs to named ranges, recalc, read outputs. |
 | `agents/vba_agent.py` | `VBAProcessAgent`: run an existing macro by name; generate a new `.bas` script. |
 | `orchestrator/router.py` | Collects registered agents and builds the list of `ToolSpec`s for the LLM. |
@@ -113,6 +117,7 @@ classDiagram
         +dict meta
     }
     BaseAgent <|-- SnowflakeAgent
+    BaseAgent <|-- SQLServerAgent
     BaseAgent <|-- ExcelModelingAgent
     BaseAgent <|-- VBAProcessAgent
     BaseAgent ..> AgentResult

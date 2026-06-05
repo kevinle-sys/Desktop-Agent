@@ -65,6 +65,28 @@ class Settings(BaseSettings):
         default=None, alias="SNOWFLAKE_AUTHENTICATOR"
     )
 
+    # --- SQL Server (legacy, transitioning to Snowflake) ---
+    sqlserver_host: Optional[str] = Field(default=None, alias="SQL_SERVER_HOST")
+    sqlserver_port: Optional[int] = Field(default=None, alias="SQL_SERVER_PORT")
+    sqlserver_database: Optional[str] = Field(
+        default=None, alias="SQL_SERVER_DATABASE"
+    )
+    sqlserver_user: Optional[str] = Field(default=None, alias="SQL_SERVER_USER")
+    sqlserver_password: Optional[str] = Field(
+        default=None, alias="SQL_SERVER_PASSWORD"
+    )
+    sqlserver_driver: str = Field(
+        default="ODBC Driver 17 for SQL Server", alias="SQL_SERVER_DRIVER"
+    )
+    # Windows / integrated auth (no user/password needed when true).
+    sqlserver_trusted_connection: bool = Field(
+        default=False, alias="SQL_SERVER_TRUSTED_CONNECTION"
+    )
+    sqlserver_encrypt: bool = Field(default=True, alias="SQL_SERVER_ENCRYPT")
+    sqlserver_trust_server_certificate: bool = Field(
+        default=False, alias="SQL_SERVER_TRUST_SERVER_CERTIFICATE"
+    )
+
     # --- Excel / VBA ---
     excel_models_dir: Path = Field(
         default=PROJECT_ROOT / "models" / "workbooks", alias="EXCEL_MODELS_DIR"
@@ -77,7 +99,14 @@ class Settings(BaseSettings):
         default=PROJECT_ROOT / "models" / "registry.yaml",
         alias="MODEL_REGISTRY_PATH",
     )
-    sql_dir: Path = Field(default=PROJECT_ROOT / "sql", alias="SQL_DIR")
+    # SQL template libraries are organized by engine so the two dialects /
+    # bind-parameter styles never collide.
+    sql_dir: Path = Field(
+        default=PROJECT_ROOT / "sql" / "snowflake", alias="SQL_DIR"
+    )
+    sql_server_dir: Path = Field(
+        default=PROJECT_ROOT / "sql" / "sqlserver", alias="SQL_SERVER_DIR"
+    )
 
     # --- Logging ---
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -110,6 +139,19 @@ class Settings(BaseSettings):
     def snowflake_configured(self) -> bool:
         """True when minimum Snowflake connection fields are present."""
         return bool(self.snowflake_account and self.snowflake_user)
+
+    @property
+    def sqlserver_configured(self) -> bool:
+        """True when minimum SQL Server connection fields are present.
+
+        A host and database are always required. Auth is satisfied by either
+        a trusted (Windows) connection or a user/password pair.
+        """
+        if not (self.sqlserver_host and self.sqlserver_database):
+            return False
+        if self.sqlserver_trusted_connection:
+            return True
+        return bool(self.sqlserver_user and self.sqlserver_password)
 
 
 @lru_cache(maxsize=1)

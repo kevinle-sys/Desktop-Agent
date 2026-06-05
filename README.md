@@ -28,8 +28,13 @@ work to the right specialist sub-agent and then synthesizes the result.
 | Sub-Agent | Responsibility | Key Libraries |
 |-----------|----------------|---------------|
 | **Snowflake/SQL Data Agent** | Secure DB connections, parameterized SQL for loan/pricing data, returns `pandas.DataFrame` | `snowflake-connector-python`, `pandas` |
+| **SQL Server Data Agent** | Legacy source during the Snowflake transition: parameterized T-SQL (SQL login or Windows auth), returns `pandas.DataFrame` | `pyodbc`, `SQLAlchemy`, `pandas` |
 | **Excel Modeling Agent** | Push inputs into pricing-model workbooks, trigger recalculation, extract calculated results | `xlwings` (live) / `openpyxl` (headless) |
 | **VBA/Process Agent** | Trigger existing Excel VBA macros, generate new `.bas` scripts | `xlwings` (COM) |
+
+> The desk is migrating from SQL Server to Snowflake. The Orchestrator prefers
+> Snowflake when the data is available there and falls back to the SQL Server
+> agent for sources that still live only in SQL Server.
 
 The LLM layer is **provider-agnostic** and config-driven: switch between
 **OpenAI** and **Anthropic** with a single environment variable.
@@ -47,10 +52,10 @@ The LLM layer is **provider-agnostic** and config-driven: switch between
 │   ├── main.py                  # CLI entry point
 │   ├── config/settings.py       # pydantic-settings, loads .env
 │   ├── llm/                     # pluggable provider layer (openai / anthropic)
-│   ├── agents/                  # base_agent + 3 sub-agents
+│   ├── agents/                  # base_agent + 4 sub-agents
 │   ├── orchestrator/            # routing + dispatch loop
 │   └── utils/logging.py
-├── sql/                         # library of reusable SQL templates
+├── sql/snowflake/ , sql/sqlserver/   # reusable SQL templates, by engine
 ├── vba/                         # library of VBA scripts (existing + generated)
 ├── models/registry.yaml         # named Excel model paths + cell mappings
 └── tests/
@@ -65,6 +70,9 @@ The LLM layer is **provider-agnostic** and config-driven: switch between
 - **Microsoft Excel** installed locally (required by `xlwings` for live
   workbooks and VBA macros). `openpyxl` works headless without Excel.
 - Network access / VPN to your Snowflake account.
+- For the SQL Server agent: a **Microsoft ODBC Driver for SQL Server**
+  installed locally (e.g. "ODBC Driver 17 for SQL Server"). Set
+  `SQL_SERVER_DRIVER` to match the installed driver name.
 
 ### 2. Create a virtual environment & install
 
@@ -119,6 +127,17 @@ See [`.env.example`](.env.example) for the full annotated list. Summary:
 | `SNOWFLAKE_DATABASE` / `SNOWFLAKE_SCHEMA` | Default namespace |
 | `SNOWFLAKE_AUTHENTICATOR` | Optional, e.g. `externalbrowser` for SSO |
 
+### SQL Server (legacy)
+| Variable | Purpose |
+|----------|---------|
+| `SQL_SERVER_HOST` | Server, e.g. `db-prod` or `db-prod\\INSTANCE` |
+| `SQL_SERVER_PORT` | Optional TCP port (default instance port if omitted) |
+| `SQL_SERVER_DATABASE` | Database name |
+| `SQL_SERVER_TRUSTED_CONNECTION` | `true` for Windows/integrated auth |
+| `SQL_SERVER_USER` / `SQL_SERVER_PASSWORD` | SQL login (if not trusted) |
+| `SQL_SERVER_DRIVER` | Installed ODBC driver, e.g. `ODBC Driver 17 for SQL Server` |
+| `SQL_SERVER_ENCRYPT` / `SQL_SERVER_TRUST_SERVER_CERTIFICATE` | TLS options |
+
 ### Excel / VBA
 | Variable | Purpose |
 |----------|---------|
@@ -131,9 +150,11 @@ See [`.env.example`](.env.example) for the full annotated list. Summary:
 ## Security notes
 - `.env` and all key files are git-ignored. **Never commit credentials.**
 - Prefer Snowflake **key-pair auth** or `externalbrowser` SSO over passwords.
-- The Snowflake agent rejects obviously destructive statements
-  (`DROP`/`DELETE`/`TRUNCATE`/`UPDATE`/`INSERT`) by default — it is built for
-  **read-only analytics**. Loosen this only deliberately.
+- Both data agents (Snowflake and SQL Server) reject obviously destructive
+  statements (`DROP`/`DELETE`/`TRUNCATE`/`UPDATE`/`INSERT`/...) by default —
+  they are built for **read-only analytics**. Loosen this only deliberately.
+- Prefer Windows/integrated auth (`SQL_SERVER_TRUSTED_CONNECTION=true`) for
+  SQL Server over storing a SQL login password.
 
 ---
 

@@ -1,11 +1,23 @@
 # SQL query library
 
-Each `.sql` file here is a named, reusable query the Snowflake/SQL agent can
-run by filename (without extension). Use `%(name)s` bind parameters so values
-are passed safely instead of string-formatted.
+Named, reusable queries the data agents run by filename (without extension).
+Templates are organized by engine because the two dialects use different
+bind-parameter syntax:
+
+| Folder | Agent | Tool name | Param style | Row cap |
+|--------|-------|-----------|-------------|---------|
+| `snowflake/` | Snowflake/SQL agent | `snowflake_query` | `%(name)s` | `LIMIT %(row_limit)s` |
+| `sqlserver/` | SQL Server agent | `sqlserver_query` | `:name` | `TOP (:row_limit)` |
+
+Always use bind parameters (never string-format values into the SQL).
 
 See [`../WORKFLOWS.md`](../WORKFLOWS.md) section A for how to add a new query.
 
-The example files (`locked_loans_by_product.sql`, `pipeline_summary_by_coupon.sql`)
-reference placeholder table names (`secondary.locks`, `secondary.pipeline`) —
-replace them with your actual Snowflake objects.
+The example files reference placeholder objects (`secondary.locks`,
+`secondary.pipeline` on Snowflake; `dbo.locks` on SQL Server) — replace them
+with your actual tables.
+
+## Which engine?
+The desk is migrating from SQL Server to Snowflake. Add new queries under
+`snowflake/` when the data is available there; keep/extend `sqlserver/` only
+for sources that still live exclusively in SQL Server.

@@ -15,6 +15,7 @@ from typing import List, Optional
 from ..agents import (
     ExcelModelingAgent,
     SnowflakeAgent,
+    SQLServerAgent,
     VBAProcessAgent,
 )
 from ..agents.base_agent import AgentResult
@@ -29,10 +30,14 @@ logger = get_logger(__name__)
 SYSTEM_PROMPT = (
     "You are the Orchestrator for a PennyMac Secondary Market Trader's desktop "
     "agent. Interpret the trader's request and accomplish it by calling the "
-    "available specialist tools (Snowflake/SQL data, Excel pricing models, and "
-    "VBA automation). Chain tools when a task needs several steps (e.g. query "
-    "data, push it into a model, then run a macro). Use tools for any real "
-    "data, calculation, or automation; never fabricate loan, pricing, or model "
+    "available specialist tools: Snowflake data warehouse queries, legacy SQL "
+    "Server queries, Excel pricing models, and VBA automation. The desk is "
+    "migrating from SQL Server to Snowflake: prefer 'snowflake_query' when the "
+    "data is available there, and use 'sqlserver_query' for data that still "
+    "lives only in SQL Server (or when the trader explicitly asks for SQL "
+    "Server). Chain tools when a task needs several steps (e.g. query data, "
+    "push it into a model, then run a macro). Use tools for any real data, "
+    "calculation, or automation; never fabricate loan, pricing, or model "
     "values. When done, give a concise, trader-friendly summary of what you "
     "did and the key results."
 )
@@ -144,6 +149,7 @@ def build_registry(settings: Optional[Settings] = None) -> AgentRegistry:
     return (
         AgentRegistry()
         .register(SnowflakeAgent(settings))
+        .register(SQLServerAgent(settings))
         .register(ExcelModelingAgent(settings))
         .register(VBAProcessAgent(settings))
     )

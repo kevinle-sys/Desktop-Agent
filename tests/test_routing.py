@@ -47,12 +47,17 @@ class ScriptedProvider(LLMProvider):
         return self._responses.pop(0)
 
 
-def test_default_registry_has_three_agents():
+def test_default_registry_has_all_agents():
     registry = build_registry()
-    assert set(registry.names) == {"snowflake_query", "excel_model", "vba_process"}
+    assert set(registry.names) == {
+        "snowflake_query",
+        "sqlserver_query",
+        "excel_model",
+        "vba_process",
+    }
     specs = registry.tool_specs()
     assert all(isinstance(s, ToolSpec) for s in specs)
-    assert len(specs) == 3
+    assert len(specs) == 4
 
 
 def test_registry_rejects_duplicate_names():
