@@ -1,0 +1,31 @@
+# =============================================================================
+# PennyMac Trading Desktop Agent - Python dependencies
+# Tested against Python 3.11+ (developed on 3.13).
+# Install with:  pip install -r requirements.txt
+# =============================================================================
+
+# --- LLM providers (pluggable layer) ---
+openai>=1.40.0
+anthropic>=0.34.0
+
+# --- Data / Snowflake ---
+snowflake-connector-python[pandas]>=3.12.0
+pandas>=2.2.0
+pyarrow>=16.0.0          # required by snowflake fetch_pandas_all()
+
+# --- Excel modeling & VBA ---
+xlwings>=0.31.0          # live workbooks + VBA macro execution (Windows/Mac, needs Excel)
+openpyxl>=3.1.0          # headless read/write fallback
+
+# --- Config & settings ---
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-dotenv>=1.0.0
+PyYAML>=6.0.0
+
+# --- CLI ---
+typer>=0.12.0
+rich>=13.7.0
+
+# --- Dev / testing ---
+pytest>=8.2.0

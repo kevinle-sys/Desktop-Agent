@@ -1,0 +1,34 @@
+# =============================================================================
+# Excel model registry
+# Maps a logical model name -> workbook path + input/output cell mappings +
+# the macros the workbook exposes. Edit this file (no code changes) to point
+# the Excel/VBA agents at new workbooks. See WORKFLOWS.md sections B and C.
+#
+# Relative `path:` values resolve against EXCEL_MODELS_DIR (default
+# models/workbooks/). Cell refs use 'Sheet!Cell' or named-range form.
+# =============================================================================
+
+models:
+  fn30_pricing:
+    path: workbooks/FN30_Pricing_Model.xlsm
+    sheet: Inputs
+    inputs:
+      coupon: Inputs!C4
+      upb: Inputs!C5
+      settle_date: Inputs!C6
+    outputs:
+      price: Outputs!B2
+      oas: Outputs!B3
+      duration: Outputs!B4
+    macros:
+      - BatchPrice
+      - RefreshMarketData
+
+  # Add more models below following the same shape.
+  # gn30_pricing:
+  #   path: workbooks/GN30_Pricing_Model.xlsm
+  #   inputs:
+  #     coupon: Inputs!C4
+  #   outputs:
+  #     price: Outputs!B2
+  #   macros: []

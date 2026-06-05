@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pennymac-trading-agent"
+version = "0.1.0"
+description = "Hierarchical Orchestrator + Sub-Agent framework for PennyMac Secondary Market trading workflows."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.40.0",
+    "anthropic>=0.34.0",
+    "snowflake-connector-python[pandas]>=3.12.0",
+    "pandas>=2.2.0",
+    "pyarrow>=16.0.0",
+    "xlwings>=0.31.0",
+    "openpyxl>=3.1.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    "python-dotenv>=1.0.0",
+    "PyYAML>=6.0.0",
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2.0"]
+
+[project.scripts]
+pennymac-agent = "pennymac_agent.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
