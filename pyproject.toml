@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pennymac-trading-agent"
 version = "0.1.0"
-description = "Hierarchical Orchestrator + Sub-Agent framework for PennyMac Secondary Market trading workflows."
+description = "CrewAI multi-agent framework for PennyMac Secondary Market trading workflows."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

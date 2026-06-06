@@ -53,9 +53,9 @@ ORDER  BY lock_date DESC;
 3. **Invoke it**: *"Pull locked loans for FN30 from SQL Server."* →
    `sqlserver_query` with `query_name="locked_loans_by_product"` and params.
 
-> Routing tip: the Orchestrator prefers Snowflake when the data is available
-> there and uses SQL Server for sources not yet migrated (or when you ask for
-> SQL Server explicitly).
+> Routing tip: the Data Analyst agent prefers Snowflake when the data is
+> available there and uses SQL Server for sources not yet migrated (or when you
+> ask for SQL Server explicitly).
 
 4. (Optional) **Inline SQL** is supported on both agents via the `sql`
    argument, subject to the read-only guardrail.
