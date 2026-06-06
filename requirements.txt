@@ -4,9 +4,9 @@
 # Install with:  pip install -r requirements.txt
 # =============================================================================
 
-# --- LLM providers (pluggable layer) ---
-openai>=1.40.0
-anthropic>=0.34.0
+# --- Multi-agent framework (CrewAI; brings LiteLLM for OpenAI/Anthropic) ---
+crewai>=0.86.0
+crewai-tools>=0.25.0
 
 # --- Data / Snowflake ---
 snowflake-connector-python[pandas]>=3.12.0

@@ -1,7 +1,7 @@
 # Workflows
 
-Step-by-step guides for extending the agent's repertoire. These are the three
-most common changes a trader will make.
+Step-by-step guides for extending the crew's repertoire. The most common
+changes a trader will make, plus how to add new tools and agents.
 
 ---
 
@@ -60,9 +60,9 @@ ORDER  BY lock_date DESC;
 4. (Optional) **Inline SQL** is supported on both agents via the `sql`
    argument, subject to the read-only guardrail.
 
-> Guardrail: both agents reject `DROP`/`DELETE`/`TRUNCATE`/`UPDATE`/`INSERT`
-> (the SQL Server agent also blocks `EXEC`) by default. See the `_assert_read_only`
-> method in `agents/snowflake_agent.py` and `agents/sqlserver_agent.py`.
+> Guardrail: both SQL tools reject `DROP`/`DELETE`/`TRUNCATE`/`UPDATE`/`INSERT`/
+> `EXEC` by default. See `assert_read_only` in
+> `src/pennymac_agent/tools/_sql_common.py`.
 
 ---
 
@@ -98,45 +98,91 @@ models:
 
 3. **Update a path** by editing the `path:` value — no redeploy needed.
 4. **Use it**: *"Push coupon 5.5 and UPB 1,000,000 into fn30_pricing and read
-   back price and OAS."* → `excel_model` tool call with
-   `model_name="fn30_pricing"`, `inputs={...}`, `outputs=["price","oas"]`.
+   back price and OAS."* The Pricing Model Engineer calls the `excel_model`
+   tool with `model_name="fn30_pricing"`, `inputs={...}`, `outputs=["price","oas"]`.
+5. **Chained from a query**: the SQL tools save a CSV to `ARTIFACTS_DIR`; pass
+   that path as `data_file` and the tool pushes matching columns from the first
+   row into the model.
 
-> The Excel agent uses `xlwings` when Excel is available (so formulas
+> The `excel_model` tool uses `xlwings` when Excel is available (so formulas
 > recalculate live) and falls back to `openpyxl` for headless read/write.
 
 ---
 
 ## C. Integrate a new VBA script
 
-The VBA agent can both **trigger existing macros** and **generate new ones**.
+The Automation Engineer can both **trigger existing macros** and **generate
+new ones**.
 
 ### Trigger an existing macro
 1. Ensure the macro lives in a workbook that is registered in
    `models/registry.yaml` under that model's `macros:` list.
-2. Ask: *"Run the BatchPrice macro in fn30_pricing."* →
-   `vba_macro` tool call with `model_name="fn30_pricing"`,
+2. Ask: *"Run the BatchPrice macro in fn30_pricing."* The agent calls the
+   `run_vba_macro` tool with `model_name="fn30_pricing"`,
    `macro_name="BatchPrice"`, and optional `args`.
 
 ### Generate a new VBA script
 1. Ask the agent to author a macro, e.g. *"Generate a VBA macro that exports
    the Outputs sheet to a timestamped CSV."*
-2. The agent writes a `.bas` file into `VBA_SCRIPTS_DIR` (default `vba/`), e.g.
-   `vba/ExportOutputsToCsv.bas`.
+2. The agent calls the `generate_vba` tool, which writes a `.bas` file into
+   `VBA_SCRIPTS_DIR` (default `vba/`), e.g. `vba/ExportOutputsToCsv.bas`.
 3. **Import it into Excel** (one-time): in Excel press `Alt+F11` → File →
    Import File → select the generated `.bas`. After import it can be triggered
    like any other macro (see above). Automated import is a documented extension
-   point in `agents/vba_agent.py`.
+   point in `src/pennymac_agent/tools/vba_tool.py`.
 
 ---
 
-## D. Add a brand-new sub-agent (advanced)
+## D. Add a new tool (capability)
 
-1. Create `src/pennymac_agent/agents/my_agent.py` subclassing `BaseAgent`;
-   define `name`, `description`, `parameters` (JSON Schema), and `run()`.
-2. Register it in `orchestrator` setup (where the other three agents are added
-   to the registry).
-3. It is automatically advertised to the LLM as a tool by `router.py` — no
-   prompt edits required.
+1. Create a `BaseTool` subclass in `src/pennymac_agent/tools/`, e.g.
+   `my_tool.py`, with a pydantic `args_schema` and a `_run(...) -> str` method.
+   Return a concise string (and persist large data to `ARTIFACTS_DIR`).
+2. Export it from `src/pennymac_agent/tools/__init__.py`.
+3. Attach it to the relevant specialist's `tools=[...]` list in
+   [src/pennymac_agent/agents.py](src/pennymac_agent/agents.py). The agent will
+   reason about when to use it automatically.
+
+## E. Add a new specialist agent (advanced)
+
+1. In [src/pennymac_agent/agents.py](src/pennymac_agent/agents.py), add an
+   `Agent` (role/goal/backstory + its tools) inside `build_specialists` and add
+   it to the returned mapping with a short key.
+2. Add the key to `available_specialists()` in
+   [src/pennymac_agent/crew.py](src/pennymac_agent/crew.py) and to
+   `_SPECIALIST_TOOLS` in [src/pennymac_agent/main.py](src/pennymac_agent/main.py)
+   so it shows up in `info` and is callable via `agent <name>`.
+3. It automatically joins the hierarchical crew (the manager can delegate to it).
+
+---
+
+## F. Give an agent more context (knowledge + discovery)
+
+You can add reference material the agents evaluate - data dictionaries, model
+methodology, runbooks, policies - with no code changes.
+
+### Reference documents (`knowledge/`)
+1. Drop a `.md`, `.txt`, `.pdf`, or `.csv` file in the right folder:
+   - `knowledge/shared/` - context for the **whole crew**.
+   - `knowledge/data_analyst/`, `knowledge/excel_modeler/`,
+     `knowledge/automation_engineer/` - context for **one specialist**.
+2. Two ways it gets used:
+   - **RAG**: embedded and retrieved automatically (needs `EMBEDDING_*` key;
+     toggle with `ENABLE_KNOWLEDGE`).
+   - **Verbatim**: agents call `list_documents` / `read_document` to read it
+     exactly (no embeddings).
+3. No restart of anything needed - it's picked up on the next run.
+
+### Live resources the agents can already evaluate
+- **SQL templates**: `list_sql_queries` reports every query in `sql/snowflake/`
+  and `sql/sqlserver/` with its header comment. Add a query (section A) and it
+  shows up.
+- **Excel models**: `describe_excel_models` reports each registered model's
+  inputs, outputs, and macros. Register a model (section B) and it shows up.
+
+> Embeddings note: knowledge RAG uses OpenAI embeddings by default. If you run
+> the agents on Anthropic, set `EMBEDDING_API_KEY` (an OpenAI key) or disable
+> RAG with `ENABLE_KNOWLEDGE=false` and rely on the document tools.
 
 ---
 
@@ -150,3 +196,5 @@ The VBA agent can both **trigger existing macros** and **generate new ones**.
 | Map new model cells | `models/registry.yaml` `inputs/outputs` | "Push ... read back ..." |
 | Run an existing macro | `macros:` list in registry | "Run the `<Macro>` macro" |
 | Create a macro | (none) | "Generate a VBA macro that ..." |
+| Add shared context | file in `knowledge/shared/` | (auto: RAG + read_document) |
+| Add per-agent context | file in `knowledge/<specialist>/` | (auto: RAG + read_document) |

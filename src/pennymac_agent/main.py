@@ -1,9 +1,9 @@
-"""Command-line entry point for the PennyMac Trading Desktop Agent.
+"""Command-line entry point for the PennyMac Trading Desktop Agent (CrewAI).
 
 Usage:
-    python -m pennymac_agent                 # interactive REPL
-    python -m pennymac_agent run "..."       # one-shot request
-    python -m pennymac_agent info            # show config + registered agents
+    python -m pennymac_agent crew "..."            # hierarchical, manager-led
+    python -m pennymac_agent agent data_analyst "..."   # one specialist directly
+    python -m pennymac_agent info                  # show config + agents/tools
 """
 
 from __future__ import annotations
@@ -13,62 +13,70 @@ from rich.console import Console
 from rich.panel import Panel
 
 from .config.settings import get_settings
-from .orchestrator.orchestrator import build_default_orchestrator, build_registry
-from .utils.logging import get_logger
 
 app = typer.Typer(
     add_completion=False,
-    help="PennyMac Trading Desktop Agent - Orchestrator + Sub-Agents.",
+    help="PennyMac Trading Desktop Agent - CrewAI multi-agent framework.",
 )
 console = Console()
-logger = get_logger(__name__)
+
+_SPECIALIST_TOOLS = {
+    "data_analyst": ["snowflake_query", "sqlserver_query"],
+    "excel_modeler": ["excel_model"],
+    "automation_engineer": ["run_vba_macro", "generate_vba"],
+}
 
 
-def _dry_run_notice(settings) -> None:
+def _require_llm() -> bool:
+    settings = get_settings()
+    if settings.llm_configured:
+        return True
     console.print(
         Panel.fit(
-            f"[yellow]Dry-run mode[/yellow]: LLM provider "
+            f"[yellow]Not configured[/yellow]: LLM provider "
             f"'[bold]{settings.llm_provider}[/bold]' has no API key set.\n"
-            "Set the key in .env to enable live orchestration. Showing the "
-            "registered agents instead.",
-            title="Not configured",
+            "Add the key to your .env to run the crew. Showing agents/tools "
+            "via `info` still works.",
+            title="Dry run",
         )
     )
-    registry = build_registry(settings)
-    orch_caps = "\n".join(
-        f"  - [bold]{s.name}[/bold]: {s.description}"
-        for s in registry.tool_specs()
-    )
-    console.print(orch_caps)
-
-
-def _run_once(request: str) -> None:
-    settings = get_settings()
-    if not settings.llm_configured:
-        _dry_run_notice(settings)
-        console.print(f"\n[dim]Request was:[/dim] {request}")
-        return
-
-    orchestrator = build_default_orchestrator(settings)
-    result = orchestrator.handle(request)
-
-    if result.tool_invocations:
-        console.print("[dim]Tool invocations:[/dim]")
-        for inv in result.tool_invocations:
-            status = "[green]ok[/green]" if inv["ok"] else "[red]failed[/red]"
-            console.print(f"  - {inv['tool']} ({status})")
-    console.print(Panel(result.final_text, title="Result"))
+    return False
 
 
 @app.command()
-def run(request: str = typer.Argument(..., help="Natural-language request.")) -> None:
-    """Execute a single request and print the result."""
-    _run_once(request)
+def crew(prompt: str = typer.Argument(..., help="Natural-language request.")) -> None:
+    """Run the hierarchical, manager-led crew."""
+    if not _require_llm():
+        return
+    from .crew import run_crew
+
+    result = run_crew(prompt)
+    console.print(Panel(result, title="Crew result"))
+
+
+@app.command()
+def agent(
+    name: str = typer.Argument(..., help="Specialist key, e.g. data_analyst."),
+    prompt: str = typer.Argument(..., help="Natural-language request."),
+) -> None:
+    """Run a single specialist agent directly."""
+    if name not in _SPECIALIST_TOOLS:
+        console.print(
+            f"[red]Unknown specialist '{name}'.[/red] Available: "
+            f"{list(_SPECIALIST_TOOLS)}"
+        )
+        raise typer.Exit(code=1)
+    if not _require_llm():
+        return
+    from .crew import run_specialist
+
+    result = run_specialist(name, prompt)
+    console.print(Panel(result, title=f"{name} result"))
 
 
 @app.command()
 def info() -> None:
-    """Show resolved configuration and the registered agents."""
+    """Show resolved configuration and the registered agents and tools."""
     settings = get_settings()
     console.print(
         Panel.fit(
@@ -76,49 +84,26 @@ def info() -> None:
             f"(model: {settings.active_model})\n"
             f"LLM configured: {settings.llm_configured}\n"
             f"Snowflake configured: {settings.snowflake_configured}\n"
+            f"SQL Server configured: {settings.sqlserver_configured}\n"
             f"Excel models dir: {settings.excel_models_dir}\n"
-            f"VBA scripts dir: {settings.vba_scripts_dir}",
+            f"Artifacts dir: {settings.artifacts_dir}",
             title="Configuration",
         )
     )
-    registry = build_registry(settings)
-    for s in registry.tool_specs():
-        console.print(f"  - [bold]{s.name}[/bold]: {s.description}")
-
-
-@app.command()
-def repl() -> None:
-    """Start an interactive prompt loop."""
-    settings = get_settings()
+    console.print("[bold]Specialists (run directly via `agent <name>`):[/bold]")
+    for key, tools in _SPECIALIST_TOOLS.items():
+        console.print(f"  - [bold]{key}[/bold]: tools = {', '.join(tools)}")
     console.print(
-        Panel.fit(
-            "PennyMac Trading Desktop Agent. Type a request, or 'exit' to quit.",
-            title="Interactive",
-        )
+        "\n[dim]Or use `crew \"<prompt>\"` to let a manager delegate across "
+        "all specialists.[/dim]"
     )
-    if not settings.llm_configured:
-        _dry_run_notice(settings)
-        return
-    orchestrator = build_default_orchestrator(settings)
-    while True:
-        try:
-            request = console.input("[bold cyan]trader>[/bold cyan] ").strip()
-        except (EOFError, KeyboardInterrupt):
-            console.print("\nBye.")
-            break
-        if request.lower() in {"exit", "quit", ":q"}:
-            break
-        if not request:
-            continue
-        result = orchestrator.handle(request)
-        console.print(Panel(result.final_text, title="Result"))
 
 
 @app.callback(invoke_without_command=True)
 def _default(ctx: typer.Context) -> None:
-    """Default to the interactive REPL when no subcommand is given."""
+    """Show help when no subcommand is given."""
     if ctx.invoked_subcommand is None:
-        repl()
+        console.print(ctx.get_help())
 
 
 if __name__ == "__main__":

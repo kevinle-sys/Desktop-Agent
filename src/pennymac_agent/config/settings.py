@@ -108,6 +108,35 @@ class Settings(BaseSettings):
         default=PROJECT_ROOT / "sql" / "sqlserver", alias="SQL_SERVER_DIR"
     )
 
+    # Where query/result artifacts are written for agent-to-agent handoff.
+    artifacts_dir: Path = Field(
+        default=PROJECT_ROOT / "artifacts", alias="ARTIFACTS_DIR"
+    )
+
+    # --- CrewAI ---
+    # Optional override for the manager LLM in the hierarchical crew. When
+    # unset, the manager reuses the active provider model.
+    manager_model: Optional[str] = Field(default=None, alias="MANAGER_MODEL")
+    crew_verbose: bool = Field(default=True, alias="CREW_VERBOSE")
+    agent_max_iter: int = Field(default=15, alias="AGENT_MAX_ITER")
+
+    # --- Knowledge (RAG context for agents) ---
+    knowledge_dir: Path = Field(
+        default=PROJECT_ROOT / "knowledge", alias="KNOWLEDGE_DIR"
+    )
+    enable_knowledge: bool = Field(default=True, alias="ENABLE_KNOWLEDGE")
+    # Embeddings are needed to index knowledge docs. Defaults to OpenAI; falls
+    # back to the OpenAI API key when a dedicated embedding key is not set.
+    embedding_provider: str = Field(
+        default="openai", alias="EMBEDDING_PROVIDER"
+    )
+    embedding_model: str = Field(
+        default="text-embedding-3-small", alias="EMBEDDING_MODEL"
+    )
+    embedding_api_key: Optional[str] = Field(
+        default=None, alias="EMBEDDING_API_KEY"
+    )
+
     # --- Logging ---
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
@@ -139,6 +168,20 @@ class Settings(BaseSettings):
     def snowflake_configured(self) -> bool:
         """True when minimum Snowflake connection fields are present."""
         return bool(self.snowflake_account and self.snowflake_user)
+
+    @property
+    def embedding_key(self) -> Optional[str]:
+        """API key used for embeddings (falls back to the OpenAI key)."""
+        return self.embedding_api_key or self.openai_api_key
+
+    @property
+    def knowledge_available(self) -> bool:
+        """True when knowledge RAG can be used (enabled, docs dir, embed key)."""
+        return bool(
+            self.enable_knowledge
+            and self.knowledge_dir.exists()
+            and self.embedding_key
+        )
 
     @property
     def sqlserver_configured(self) -> bool:

@@ -1,155 +1,154 @@
 # Architecture
 
-This document describes how the **Orchestrator** and the three **Sub-Agents**
-communicate, and how the Python modules connect.
+This framework is built on **CrewAI**. The core distinction:
+
+- **Agents** are the brains: autonomous, LLM-backed reasoners with a role, goal,
+  and backstory. Once prompted, they decide which tools to call and iterate.
+- **Tools** are the hands: deterministic Python (`crewai.tools.BaseTool`
+  subclasses) that connect to Snowflake/SQL Server/Excel/VBA, with read-only
+  guardrails. Tools contain no LLM logic.
 
 ---
 
-## 1. High-level flow
-
-The Orchestrator is the only component that talks to the LLM. It advertises
-each sub-agent to the model as a **callable tool**. The model decides which
-tool(s) to call and with what arguments (native tool-calling + structured
-output). The Orchestrator executes those tool calls against the real
-sub-agents, feeds results back, and loops until the model produces a final
-answer.
+## 1. Components
 
 ```mermaid
 flowchart TD
-    User[Trader CLI] --> Orch[Orchestrator]
-    Orch -->|"messages + tool schemas"| LLM[LLM Provider<br/>OpenAI or Anthropic]
-    LLM -->|"structured tool_call(s)"| Orch
-    Orch -->|dispatch| Registry[Agent Registry]
-    Registry --> SF[Snowflake/SQL Agent]
-    Registry --> MS[SQL Server Agent]
-    Registry --> XL[Excel Modeling Agent]
-    Registry --> VBA[VBA/Process Agent]
-    SF --> SFDB[(Snowflake)]
-    MS --> MSDB[(SQL Server)]
-    XL --> WB["Excel workbooks"]
-    VBA --> MAC["VBA macros / .bas files"]
-    SF -->|"tool_result (DataFrame summary)"| Orch
-    MS -->|"tool_result (DataFrame summary)"| Orch
-    XL -->|"tool_result (cell values)"| Orch
-    VBA -->|"tool_result (status)"| Orch
-    Orch -->|"final synthesis"| User
+    User[Trader CLI] --> CrewMod[crew.py]
+    CrewMod -->|hierarchical| Mgr["Manager Agent (Chief of Staff)"]
+    CrewMod -->|direct| Solo[Single specialist]
+    Mgr -. delegates .-> DA[Data Analyst]
+    Mgr -. delegates .-> EM[Pricing Model Engineer]
+    Mgr -. delegates .-> AE[Automation Engineer]
+    DA --> T1[snowflake_query]
+    DA --> T2[sqlserver_query]
+    EM --> T3[excel_model]
+    AE --> T4[run_vba_macro]
+    AE --> T5[generate_vba]
+    T1 --> SF[(Snowflake)]
+    T2 --> MS[(SQL Server)]
+    T3 --> WB["Excel workbooks"]
+    T4 --> MAC["VBA macros"]
+    T5 --> BAS[".bas files"]
 ```
 
 ---
 
-## 2. Tool-calling sequence
+## 2. Two run modes
+
+```mermaid
+flowchart LR
+    subgraph hier [Hierarchical crew]
+        H1[Task: trader prompt] --> H2["Manager plans + delegates"]
+        H2 --> H3[Specialists execute with tools]
+        H3 --> H4[Manager validates + final answer]
+    end
+    subgraph direct [Direct specialist]
+        D1[Task assigned to one agent] --> D2["Agent reasons + uses its tools"]
+        D2 --> D3[Final answer]
+    end
+```
+
+- Hierarchical: `Crew(process=Process.hierarchical, manager_agent=...)` with a
+  single unassigned `Task`, so the manager allocates work. See
+  [src/pennymac_agent/crew.py](src/pennymac_agent/crew.py) (`build_hierarchical_crew`).
+- Direct: `Crew(process=Process.sequential)` with the `Task` assigned to one
+  specialist (`build_specialist_crew`).
+
+---
+
+## 3. Autonomy (ReAct loop)
 
 ```mermaid
 sequenceDiagram
     participant U as Trader
-    participant O as Orchestrator
-    participant L as LLM Provider
-    participant A as Sub-Agent
-
-    U->>O: natural-language request
-    O->>L: chat(messages, tools=[agent schemas])
-    L-->>O: tool_call(name="snowflake_query", args={...})
-    O->>A: agent.run(**args)
-    A-->>O: AgentResult(data, summary)
-    O->>L: tool_result(summary)
-    L-->>O: (maybe another tool_call, or final text)
-    O-->>U: final answer + artifacts
+    participant A as Specialist Agent
+    participant T as Tool
+    U->>A: prompt (task)
+    loop until done or max_iter
+        A->>A: reason about next action
+        A->>T: call tool with args
+        T-->>A: observation (summary / file path / error)
+    end
+    A-->>U: final answer
 ```
 
-The loop continues while the model keeps emitting tool calls, bounded by
-`Orchestrator.max_iterations` to prevent runaway loops.
+Each specialist is bounded by `AGENT_MAX_ITER` ([settings](src/pennymac_agent/config/settings.py)).
 
 ---
 
-## 3. Module map
+## 4. Module map
 
 | Module | Responsibility |
 |--------|----------------|
-| `src/pennymac_agent/main.py` | CLI (typer): `run` one-shot and interactive REPL. Builds the orchestrator and prints results. |
-| `config/settings.py` | `Settings` (pydantic-settings) loads `.env`: LLM provider/keys, Snowflake creds, SQL Server creds, Excel/VBA paths, logging. Single source of truth. |
-| `llm/base.py` | `LLMProvider` ABC + shared types (`ChatMessage`, `ToolSpec`, `ToolCall`, `LLMResponse`). Defines the provider-agnostic contract. |
-| `llm/openai_provider.py` | Implements `LLMProvider` against the OpenAI SDK (`tools=` / `tool_calls`). |
-| `llm/anthropic_provider.py` | Implements `LLMProvider` against the Anthropic SDK (`tools=` / `tool_use` blocks). |
-| `llm/factory.py` | `build_provider(settings)` returns the configured provider. |
-| `agents/base_agent.py` | `BaseAgent` ABC: `name`, `description`, `parameters` (JSON schema), `run()`, and `to_tool_spec()`. `AgentResult` dataclass. |
-| `agents/snowflake_agent.py` | `SnowflakeAgent`: connect, run parameterized SQL (`%(name)s` binds), return `DataFrame`; read-only guardrail. |
-| `agents/sqlserver_agent.py` | `SQLServerAgent`: legacy SQL Server via SQLAlchemy+pyodbc, parameterized T-SQL (`:name` binds), SQL login or Windows auth, return `DataFrame`; read-only guardrail. |
-| `agents/excel_agent.py` | `ExcelModelingAgent`: open registered workbook, write inputs to named ranges, recalc, read outputs. |
-| `agents/vba_agent.py` | `VBAProcessAgent`: run an existing macro by name; generate a new `.bas` script. |
-| `orchestrator/router.py` | Collects registered agents and builds the list of `ToolSpec`s for the LLM. |
-| `orchestrator/orchestrator.py` | The dispatch loop: calls the provider, maps `ToolCall` → agent, executes, returns synthesis. |
-| `utils/logging.py` | `get_logger()` — structured, level-from-env logging. |
+| [src/pennymac_agent/main.py](src/pennymac_agent/main.py) | CLI (typer): `crew`, `agent <name>`, `info`. |
+| [src/pennymac_agent/crew.py](src/pennymac_agent/crew.py) | Assemble + run the hierarchical and direct crews. |
+| [src/pennymac_agent/agents.py](src/pennymac_agent/agents.py) | Build specialist agents (role/goal/backstory + tools) and the manager. |
+| [src/pennymac_agent/llm.py](src/pennymac_agent/llm.py) | Build `crewai.LLM` from settings; map provider to a LiteLLM model string. |
+| [src/pennymac_agent/config/settings.py](src/pennymac_agent/config/settings.py) | `Settings` (pydantic-settings): LLM, Snowflake, SQL Server, Excel/VBA, artifacts. |
+| `src/pennymac_agent/tools/snowflake_tool.py` | `SnowflakeQueryTool`: read-only SQL, returns preview + CSV path. |
+| `src/pennymac_agent/tools/sqlserver_tool.py` | `SQLServerQueryTool`: legacy T-SQL via SQLAlchemy+pyodbc. |
+| `src/pennymac_agent/tools/excel_tool.py` | `ExcelModelTool`: push inputs, recalc, read outputs; optional CSV input. |
+| `src/pennymac_agent/tools/vba_tool.py` | `RunMacroTool`, `GenerateVBATool`. |
+| `src/pennymac_agent/tools/discovery_tool.py` | `ListSQLQueriesTool`, `DescribeExcelModelsTool`: let agents discover the SQL library and model registry. |
+| `src/pennymac_agent/tools/docs_tool.py` | `ListDocumentsTool`, `ReadDocumentTool`: verbatim reads from `knowledge/`. |
+| `src/pennymac_agent/tools/_sql_common.py` | Read-only guardrail, named-query loading, result persistence. |
+| [src/pennymac_agent/knowledge.py](src/pennymac_agent/knowledge.py) | Build RAG knowledge sources (shared + per-agent) and the embedder config. |
 
 ---
 
-## 4. The agent contract
+## 5. Agent-to-agent data handoff
 
-Every sub-agent is a `BaseAgent` subclass exposing a stable contract so the
-router can advertise it without special-casing:
-
-```python
-class BaseAgent(ABC):
-    name: str             # unique tool name, e.g. "snowflake_query"
-    description: str      # tells the LLM WHEN to use it
-    parameters: dict      # JSON Schema for arguments
-
-    def run(self, **kwargs) -> AgentResult: ...
-    def to_tool_spec(self) -> ToolSpec: ...   # provider-agnostic schema
-```
-
-`AgentResult` carries both a machine payload (`data`) and a compact
-human/LLM-facing `summary` so large objects (e.g. DataFrames) are not dumped
-verbatim back into the model context.
-
-```mermaid
-classDiagram
-    class BaseAgent {
-        +str name
-        +str description
-        +dict parameters
-        +run(**kwargs) AgentResult
-        +to_tool_spec() ToolSpec
-    }
-    class AgentResult {
-        +bool ok
-        +Any data
-        +str summary
-        +dict meta
-    }
-    BaseAgent <|-- SnowflakeAgent
-    BaseAgent <|-- SQLServerAgent
-    BaseAgent <|-- ExcelModelingAgent
-    BaseAgent <|-- VBAProcessAgent
-    BaseAgent ..> AgentResult
-```
-
----
-
-## 5. Provider abstraction
-
-The Orchestrator never imports `openai` or `anthropic` directly. It depends
-only on `LLMProvider`:
+CrewAI passes task outputs as text, which is poor for large DataFrames. So the
+SQL tools persist results to `ARTIFACTS_DIR` as CSV and return a compact
+summary plus the file path. The `excel_model` tool accepts an optional
+`data_file` to load those values into a model — enabling chained workflows
+(query -> model -> macro) without dumping raw data into the LLM context.
 
 ```mermaid
 flowchart LR
-    Orch[Orchestrator] --> Base["LLMProvider (ABC)"]
-    Base <|.. OAI[OpenAIProvider]
-    Base <|.. ANT[AnthropicProvider]
-    Factory[factory.build_provider] --> Base
-    Settings[Settings.LLM_PROVIDER] --> Factory
+    Q[snowflake_query / sqlserver_query] -->|writes| CSV["artifacts/<name>.csv"]
+    Q -->|returns| Sum["summary + path (to the agent)"]
+    CSV -->|data_file| XL[excel_model]
 ```
-
-Each provider is responsible for translating the neutral `ToolSpec` /
-`ToolCall` types into its own wire format and back, so the rest of the codebase
-stays identical regardless of vendor.
 
 ---
 
-## 6. Data & control flow summary
-1. CLI builds `Settings`, the LLM provider, and registers the three agents.
-2. Orchestrator sends the user message plus tool schemas to the provider.
-3. Provider returns either a final message or one/more structured tool calls.
-4. Orchestrator maps each tool call to an agent and executes `run()`.
-5. `AgentResult.summary` is returned to the model as a tool result.
-6. Steps 2–5 repeat until the model returns a final answer or `max_iterations`
-   is reached.
+## 6. Agent context (knowledge + discovery)
+
+Agents get context three ways:
+
+```mermaid
+flowchart TD
+    subgraph ctx [Context sources]
+        K["knowledge/ docs (RAG)"]
+        D["discovery tools (live resources)"]
+        B["backstory/goal (static)"]
+    end
+    K -->|embedded + retrieved| A[Specialist Agent]
+    D -->|list_sql_queries / describe_excel_models / read_document| A
+    B --> A
+```
+
+- **Knowledge (RAG)**: `knowledge/shared/` is attached to the crew; `knowledge/<key>/`
+  to each specialist. Built in [knowledge.py](src/pennymac_agent/knowledge.py) and
+  embedded via the configured embedder. Gated by `ENABLE_KNOWLEDGE` + an
+  embedding key (`Settings.knowledge_available`).
+- **Discovery tools**: deterministic lookups of the SQL library and model
+  registry, plus verbatim doc reads - no embeddings required.
+- **Static**: role/goal/backstory in [agents.py](src/pennymac_agent/agents.py).
+
+## 7. Provider abstraction
+
+`llm.py` is the only provider-aware code. `LLM_PROVIDER` selects OpenAI or
+Anthropic; the model name is passed to CrewAI's `LLM` (LiteLLM), which handles
+the vendor wire format. Anthropic models are auto-prefixed to
+`anthropic/<model>`.
+
+```mermaid
+flowchart LR
+    Settings[LLM_PROVIDER + keys] --> LLMmod[llm.build_llm]
+    LLMmod --> CrewLLM["crewai.LLM (LiteLLM)"]
+    CrewLLM --> OAI[OpenAI]
+    CrewLLM --> ANT[Anthropic]
+```

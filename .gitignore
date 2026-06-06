@@ -40,6 +40,9 @@ htmlcov/
 *.log
 logs/
 
+# Agent run artifacts (query result CSVs, handoff files)
+artifacts/
+
 # IDE / OS
 .idea/
 .vscode/
