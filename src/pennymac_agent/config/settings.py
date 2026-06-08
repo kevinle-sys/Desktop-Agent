@@ -26,6 +26,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        # Treat blank env values (e.g. SQL_SERVER_PORT=) as unset so optional
+        # int/bool fields fall back to their defaults instead of failing.
+        env_ignore_empty=True,
     )
 
     # --- LLM provider selection ---

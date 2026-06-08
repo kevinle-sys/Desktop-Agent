@@ -74,7 +74,10 @@ def build_specialists(settings: Optional[Settings] = None) -> Dict[str, Speciali
             "so you prefer Snowflake but fall back to SQL Server when needed. "
             "You never guess numbers; you query for them and cite row counts. "
             "You consult the data dictionary and the named-query library before "
-            "writing SQL."
+            "writing SQL. A large set of UNVALIDATED legacy queries is available "
+            "under legacy_queries/ (via list_documents/read_document) for "
+            "table/column hints and patterns - never run them verbatim; adapt "
+            "and verify first."
         ),
         tools=[
             SnowflakeQueryTool(settings=settings),

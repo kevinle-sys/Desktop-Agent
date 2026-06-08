@@ -16,3 +16,12 @@ correct queries and choose the right source.
 - Dates are `YYYY-MM-DD`.
 - Always parameterize (`%(name)s` for Snowflake, `:name` for SQL Server).
 - Use the named-query library first (`list_sql_queries`) before writing ad-hoc SQL.
+
+## Legacy query reference (unvalidated)
+- A large set of historical queries lives under `legacy_queries/` in the
+  knowledge directory (`legacy_queries/sql_queries/` and `legacy_queries/ad_hoc/`).
+- Browse with `list_documents subdir="legacy_queries"` and read with
+  `read_document`. Use them for table/column hints and patterns only.
+- They are UNVALIDATED and may reference outdated schemas - do NOT run them
+  verbatim. Adapt and verify, ideally porting good ones into the validated
+  `sql/` library.

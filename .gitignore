@@ -43,6 +43,10 @@ logs/
 # Agent run artifacts (query result CSVs, handoff files)
 artifacts/
 
+# Internal/legacy reference material ingested locally - NEVER push to a public
+# repo. Agents read these via read_document; they stay on this machine only.
+knowledge/legacy_queries/
+
 # IDE / OS
 .idea/
 .vscode/
