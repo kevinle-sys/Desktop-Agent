@@ -4,9 +4,11 @@
 # Install with:  pip install -r requirements.txt
 # =============================================================================
 
-# --- Multi-agent framework (CrewAI; brings LiteLLM for OpenAI/Anthropic) ---
+# --- Multi-agent framework (CrewAI) ---
 crewai>=0.86.0
 crewai-tools>=0.25.0
+# CrewAI's native Anthropic provider requires the anthropic SDK.
+anthropic>=0.40.0
 
 # --- Data / Snowflake ---
 snowflake-connector-python[pandas]>=3.12.0
