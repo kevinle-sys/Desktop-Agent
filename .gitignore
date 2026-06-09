@@ -47,6 +47,10 @@ artifacts/
 # repo. Agents read these via read_document; they stay on this machine only.
 knowledge/legacy_queries/
 
+# Machine-specific MCP config (has an absolute local path). Commit the template
+# .cursor/mcp.json.example instead.
+.cursor/mcp.json
+
 # IDE / OS
 .idea/
 .vscode/

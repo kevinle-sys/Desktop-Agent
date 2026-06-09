@@ -1,7 +1,8 @@
 """PennyMac Trading Desktop Agent.
 
-A CrewAI multi-agent framework for Secondary Market trading workflows:
-Snowflake/SQL data, Excel pricing models, and VBA automation.
+Tools for Secondary Market trading workflows (Snowflake/SQL data, Excel pricing
+models, VBA automation), exposed via an MCP server and driven by Cursor
+Subagents defined in .cursor/agents/.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

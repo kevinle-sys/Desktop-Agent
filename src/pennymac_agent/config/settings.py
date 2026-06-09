@@ -1,15 +1,18 @@
 """Central application configuration.
 
 All runtime configuration is loaded from environment variables (and a local
-``.env`` file) via pydantic-settings. This is the single source of truth for
-LLM credentials, Snowflake connection details, and Excel/VBA paths.
+``.env`` file) via pydantic-settings. This is the single source of truth for the
+data-source connections and the Excel/VBA/knowledge paths used by the MCP tools.
+
+The reasoning layer (Cursor subagents) runs on the user's Cursor account, so no
+LLM provider keys are configured here.
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,23 +32,6 @@ class Settings(BaseSettings):
         # Treat blank env values (e.g. SQL_SERVER_PORT=) as unset so optional
         # int/bool fields fall back to their defaults instead of failing.
         env_ignore_empty=True,
-    )
-
-    # --- LLM provider selection ---
-    llm_provider: Literal["openai", "anthropic"] = Field(
-        default="anthropic", alias="LLM_PROVIDER"
-    )
-    llm_max_tokens: int = Field(default=4096, alias="LLM_MAX_TOKENS")
-    llm_temperature: float = Field(default=0.0, alias="LLM_TEMPERATURE")
-
-    # OpenAI
-    openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-4o", alias="OPENAI_MODEL")
-
-    # Anthropic
-    anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
-    anthropic_model: str = Field(
-        default="claude-opus-4-20250514", alias="ANTHROPIC_MODEL"
     )
 
     # --- Snowflake ---
@@ -81,7 +67,6 @@ class Settings(BaseSettings):
     sqlserver_driver: str = Field(
         default="ODBC Driver 17 for SQL Server", alias="SQL_SERVER_DRIVER"
     )
-    # Windows / integrated auth (no user/password needed when true).
     sqlserver_trusted_connection: bool = Field(
         default=False, alias="SQL_SERVER_TRUSTED_CONNECTION"
     )
@@ -95,49 +80,24 @@ class Settings(BaseSettings):
         default=PROJECT_ROOT / "models" / "workbooks", alias="EXCEL_MODELS_DIR"
     )
     excel_visible: bool = Field(default=False, alias="EXCEL_VISIBLE")
-    vba_scripts_dir: Path = Field(
-        default=PROJECT_ROOT / "vba", alias="VBA_SCRIPTS_DIR"
-    )
+    vba_scripts_dir: Path = Field(default=PROJECT_ROOT / "vba", alias="VBA_SCRIPTS_DIR")
     model_registry_path: Path = Field(
         default=PROJECT_ROOT / "models" / "registry.yaml",
         alias="MODEL_REGISTRY_PATH",
     )
-    # SQL template libraries are organized by engine so the two dialects /
-    # bind-parameter styles never collide.
-    sql_dir: Path = Field(
-        default=PROJECT_ROOT / "sql" / "snowflake", alias="SQL_DIR"
-    )
+
+    # --- SQL template libraries (organized by engine) ---
+    sql_dir: Path = Field(default=PROJECT_ROOT / "sql" / "snowflake", alias="SQL_DIR")
     sql_server_dir: Path = Field(
         default=PROJECT_ROOT / "sql" / "sqlserver", alias="SQL_SERVER_DIR"
     )
 
-    # Where query/result artifacts are written for agent-to-agent handoff.
+    # --- Paths ---
     artifacts_dir: Path = Field(
         default=PROJECT_ROOT / "artifacts", alias="ARTIFACTS_DIR"
     )
-
-    # --- CrewAI ---
-    # Optional override for the manager LLM in the hierarchical crew. When
-    # unset, the manager reuses the active provider model.
-    manager_model: Optional[str] = Field(default=None, alias="MANAGER_MODEL")
-    crew_verbose: bool = Field(default=True, alias="CREW_VERBOSE")
-    agent_max_iter: int = Field(default=15, alias="AGENT_MAX_ITER")
-
-    # --- Knowledge (RAG context for agents) ---
     knowledge_dir: Path = Field(
         default=PROJECT_ROOT / "knowledge", alias="KNOWLEDGE_DIR"
-    )
-    enable_knowledge: bool = Field(default=True, alias="ENABLE_KNOWLEDGE")
-    # Embeddings are needed to index knowledge docs. Defaults to OpenAI; falls
-    # back to the OpenAI API key when a dedicated embedding key is not set.
-    embedding_provider: str = Field(
-        default="openai", alias="EMBEDDING_PROVIDER"
-    )
-    embedding_model: str = Field(
-        default="text-embedding-3-small", alias="EMBEDDING_MODEL"
-    )
-    embedding_api_key: Optional[str] = Field(
-        default=None, alias="EMBEDDING_API_KEY"
     )
 
     # --- Logging ---
@@ -145,53 +105,16 @@ class Settings(BaseSettings):
 
     # --- Convenience ---
     @property
-    def active_model(self) -> str:
-        """Return the model name for the currently selected provider."""
-        return (
-            self.openai_model
-            if self.llm_provider == "openai"
-            else self.anthropic_model
-        )
-
-    @property
-    def active_api_key(self) -> Optional[str]:
-        """Return the API key for the currently selected provider."""
-        return (
-            self.openai_api_key
-            if self.llm_provider == "openai"
-            else self.anthropic_api_key
-        )
-
-    @property
-    def llm_configured(self) -> bool:
-        """True when the selected provider has an API key available."""
-        return bool(self.active_api_key)
-
-    @property
     def snowflake_configured(self) -> bool:
         """True when minimum Snowflake connection fields are present."""
         return bool(self.snowflake_account and self.snowflake_user)
 
     @property
-    def embedding_key(self) -> Optional[str]:
-        """API key used for embeddings (falls back to the OpenAI key)."""
-        return self.embedding_api_key or self.openai_api_key
-
-    @property
-    def knowledge_available(self) -> bool:
-        """True when knowledge RAG can be used (enabled, docs dir, embed key)."""
-        return bool(
-            self.enable_knowledge
-            and self.knowledge_dir.exists()
-            and self.embedding_key
-        )
-
-    @property
     def sqlserver_configured(self) -> bool:
         """True when minimum SQL Server connection fields are present.
 
-        A host and database are always required. Auth is satisfied by either
-        a trusted (Windows) connection or a user/password pair.
+        A host and database are always required. Auth is satisfied by either a
+        trusted (Windows) connection or a user/password pair.
         """
         if not (self.sqlserver_host and self.sqlserver_database):
             return False

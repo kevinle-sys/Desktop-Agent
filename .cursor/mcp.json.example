@@ -1,0 +1,12 @@
+{
+  "//": "Copy to .cursor/mcp.json and set PYTHONPATH to the absolute path of this repo's src/ folder (e.g. C:\\path\\to\\Desktop Agent\\src). The real mcp.json is git-ignored because the path is machine-specific.",
+  "mcpServers": {
+    "pennymac-trading": {
+      "command": "python",
+      "args": ["-m", "pennymac_agent.mcp_server"],
+      "env": {
+        "PYTHONPATH": "<ABSOLUTE_PATH_TO_REPO>\\src"
+      }
+    }
+  }
+}

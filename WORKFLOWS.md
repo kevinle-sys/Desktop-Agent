@@ -1,7 +1,7 @@
 # Workflows
 
-Step-by-step guides for extending the crew's repertoire. The most common
-changes a trader will make, plus how to add new tools and agents.
+Step-by-step guides for extending the agents' repertoire. The most common
+changes a trader will make, plus how to add new MCP tools and subagents.
 
 ---
 
@@ -135,24 +135,23 @@ new ones**.
 
 ## D. Add a new tool (capability)
 
-1. Create a `BaseTool` subclass in `src/pennymac_agent/tools/`, e.g.
-   `my_tool.py`, with a pydantic `args_schema` and a `_run(...) -> str` method.
-   Return a concise string (and persist large data to `ARTIFACTS_DIR`).
+1. Write a plain function in `src/pennymac_agent/tools/` (e.g. `my_tool.py`)
+   with typed parameters and a clear docstring (FastMCP builds the tool schema
+   from these). Return a concise string; persist large data to `ARTIFACTS_DIR`.
 2. Export it from `src/pennymac_agent/tools/__init__.py`.
-3. Attach it to the relevant specialist's `tools=[...]` list in
-   [src/pennymac_agent/agents.py](src/pennymac_agent/agents.py). The agent will
-   reason about when to use it automatically.
+3. Register it in [src/pennymac_agent/mcp_server.py](src/pennymac_agent/mcp_server.py)
+   by adding it to the registration loop (`mcp.tool()(my_tool)`).
+4. Restart the MCP server in Cursor (or reload) so the new tool is exposed.
 
-## E. Add a new specialist agent (advanced)
+## E. Add a new specialist subagent
 
-1. In [src/pennymac_agent/agents.py](src/pennymac_agent/agents.py), add an
-   `Agent` (role/goal/backstory + its tools) inside `build_specialists` and add
-   it to the returned mapping with a short key.
-2. Add the key to `available_specialists()` in
-   [src/pennymac_agent/crew.py](src/pennymac_agent/crew.py) and to
-   `_SPECIALIST_TOOLS` in [src/pennymac_agent/main.py](src/pennymac_agent/main.py)
-   so it shows up in `info` and is callable via `agent <name>`.
-3. It automatically joins the hierarchical crew (the manager can delegate to it).
+1. Create a new `.cursor/agents/<name>.md` with frontmatter (`name`,
+   `description`, optionally `model`/`readonly`) and a system-prompt body telling
+   it which MCP tools to use and the conventions to follow.
+2. Reference it from [.cursor/agents/orchestrator.md](.cursor/agents/orchestrator.md)
+   so the orchestrator can delegate to it.
+3. It's available immediately in Cursor (no code change) — by mention or via the
+   orchestrator's Task delegation.
 
 ---
 
@@ -162,16 +161,13 @@ You can add reference material the agents evaluate - data dictionaries, model
 methodology, runbooks, policies - with no code changes.
 
 ### Reference documents (`knowledge/`)
-1. Drop a `.md`, `.txt`, `.pdf`, or `.csv` file in the right folder:
-   - `knowledge/shared/` - context for the **whole crew**.
-   - `knowledge/data_analyst/`, `knowledge/excel_modeler/`,
-     `knowledge/automation_engineer/` - context for **one specialist**.
-2. Two ways it gets used:
-   - **RAG**: embedded and retrieved automatically (needs `EMBEDDING_*` key;
-     toggle with `ENABLE_KNOWLEDGE`).
-   - **Verbatim**: agents call `list_documents` / `read_document` to read it
-     exactly (no embeddings).
-3. No restart of anything needed - it's picked up on the next run.
+1. Drop a `.md`, `.txt`, `.csv`, `.sql`, `.json`, or `.yaml` file anywhere under
+   `knowledge/` (suggested folders: `shared/`, `data_analyst/`, `excel_modeler/`,
+   `automation_engineer/`, `legacy_queries/`).
+2. Agents read them via the `list_documents` and `read_document` tools (verbatim,
+   100% local - nothing is sent to an embedding service).
+3. Picked up on the next call - no restart needed. You can also point a
+   subagent's system prompt (`.cursor/agents/<name>.md`) at a specific doc.
 
 ### Live resources the agents can already evaluate
 - **SQL templates**: `list_sql_queries` reports every query in `sql/snowflake/`
@@ -179,10 +175,6 @@ methodology, runbooks, policies - with no code changes.
   shows up.
 - **Excel models**: `describe_excel_models` reports each registered model's
   inputs, outputs, and macros. Register a model (section B) and it shows up.
-
-> Embeddings note: knowledge RAG uses OpenAI embeddings by default. If you run
-> the agents on Anthropic, set `EMBEDDING_API_KEY` (an OpenAI key) or disable
-> RAG with `ENABLE_KNOWLEDGE=false` and rely on the document tools.
 
 ---
 
@@ -196,5 +188,6 @@ methodology, runbooks, policies - with no code changes.
 | Map new model cells | `models/registry.yaml` `inputs/outputs` | "Push ... read back ..." |
 | Run an existing macro | `macros:` list in registry | "Run the `<Macro>` macro" |
 | Create a macro | (none) | "Generate a VBA macro that ..." |
-| Add shared context | file in `knowledge/shared/` | (auto: RAG + read_document) |
-| Add per-agent context | file in `knowledge/<specialist>/` | (auto: RAG + read_document) |
+| Add reference context | file in `knowledge/...` | (read via `read_document`) |
+| Add a tool | function in `tools/` + register in `mcp_server.py` | (restart MCP server) |
+| Add a subagent | new `.cursor/agents/<name>.md` | mention it / via orchestrator |
